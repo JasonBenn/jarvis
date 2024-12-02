@@ -1,40 +1,19 @@
-const AudioRecorder = require('node-audiorecorder');
-const fs = require('fs');
-
-// Audio recording options
-const options = {
-  program: 'rec',     // Try "arecord" on Linux or "rec" on macOS
-  device: null,       // Recording device to use, null = default
-  bits: 16,          // Sample size (bits)
-  channels: 1,       // Number of channels
-  encoding: 'signed-integer',
-  rate: 24000,       // Sample rate
-  type: 'wav',        // Format type
-  silence: 0 // Remove silence detection parameters
-};
-
-// Create new instance
-const recorder = new AudioRecorder(options, console);
-
-// File path to save the recording
-const fileName = `data/recording-${new Date().toISOString().replace(/[:.]/g, '-')}.wav`;
-const fileStream = fs.createWriteStream(fileName);
+import recorder from 'node-record-lpcm16';
+import fs from 'fs';
 
 console.log('Recording... Press Ctrl+C to stop.');
 
-// Start recording
-recorder.start().stream().pipe(fileStream);
-
-// Handle interruption
-process.on('SIGINT', () => {
-  console.log('\nStopping recording...');
-  recorder.stop();
-  fileStream.end();
-  process.exit();
+const recording = recorder.record({
+    sampleRate: 24000,  // Match Realtime API requirements
+    channels: 1,
+    audioType: 'raw',   // Direct PCM16 output
 });
 
-// Log errors
-recorder.on('error', error => {
-  console.error('Recording error:', error);
-  process.exit(1);
+// Save as raw PCM file (no WAV header)
+recording.stream().pipe(fs.createWriteStream('data/24khz.raw'));
+
+process.on('SIGINT', () => {
+    console.log('\nStopping recording...');
+    recording.stop();
+    process.exit();
 });
