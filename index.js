@@ -8,11 +8,10 @@ dotenv.config();
 class RealtimeClient {
     constructor(apiKey) {
         this.apiKey = apiKey;
-        // Create speaker instance with correct audio format
         this.speaker = new Speaker({
             channels: 1,
             bitDepth: 16,
-            sampleRate: 24000  // OpenAI's audio is 24kHz PCM
+            sampleRate: 24000
         });
     }
 
@@ -54,14 +53,13 @@ class RealtimeClient {
 
         this.ws.onerror = (error) => {
             console.error('🔴 WebSocket error:', error.message || error);
-            // Log the full error object for debugging
             console.error('Full error:', JSON.stringify(error, null, 2));
         };
 
         this.ws.onclose = () => {
             console.log('🔵 Connection closed');
-            // Clean up speaker on connection close
             this.speaker.end();
+            gracefulShutdown();
         };
     }
 
@@ -72,6 +70,12 @@ class RealtimeClient {
         switch (event.type) {
             case 'response.audio.delta':
                 this.handleAudioDelta(event.delta);
+                break;
+            case 'response.done':
+                this.speaker.on('finish', () => {
+                    gracefulShutdown();
+                });
+                this.speaker.end();
                 break;
             case 'conversation.item.created':
                 if (event.item.role === 'assistant') {
@@ -85,9 +89,6 @@ class RealtimeClient {
                         event.item.content?.[0]?.transcript || 
                         '<no text>');
                 }
-                break;
-            case 'error':
-                console.error('🔴 Error:', event.error);
                 break;
         }
     }
@@ -156,9 +157,11 @@ class RealtimeClient {
 const client = new RealtimeClient(process.env.OPENAI_API_KEY);
 client.connect();
 
-// Graceful shutdown
-process.on('SIGINT', () => {
-    console.log('\nGracefully shutting down...');
+function gracefulShutdown() {
+    console.log('🔊 Graceful shutdown');
     client.disconnect();
-    process.exit();
-});
+    process.exit(0);
+}
+
+// Graceful shutdown
+process.on('SIGINT', gracefulShutdown);
