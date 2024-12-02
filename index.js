@@ -1,19 +1,29 @@
 import WebSocket from "ws";
 import fs from 'fs';
 import dotenv from 'dotenv';
+import Speaker from 'speaker';
 
 dotenv.config();
 
 class RealtimeClient {
     constructor(apiKey) {
         this.apiKey = apiKey;
-        this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        this.audioQueue = [];
-        this.isPlaying = false;
+        // Create speaker instance with correct audio format
+        this.speaker = new Speaker({
+            channels: 1,
+            bitDepth: 16,
+            sampleRate: 24000  // OpenAI's audio is 24kHz PCM
+        });
     }
 
     connect() {
-        this.ws = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01');
+        this.ws = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01', {
+            headers: {
+                'Authorization': `Bearer ${this.apiKey}`,
+                "OpenAI-Beta": "realtime=v1",
+
+            }
+        });
         
         this.ws.onopen = () => {
             console.log('🌐 Connected to OpenAI Realtime API');
@@ -43,16 +53,19 @@ class RealtimeClient {
         };
 
         this.ws.onerror = (error) => {
-            console.error('🔴 WebSocket error:', error);
+            console.error('🔴 WebSocket error:', error.message || error);
+            // Log the full error object for debugging
+            console.error('Full error:', JSON.stringify(error, null, 2));
         };
 
         this.ws.onclose = () => {
             console.log('🔵 Connection closed');
+            // Clean up speaker on connection close
+            this.speaker.end();
         };
     }
 
     handleEvent(event) {
-        // Log event type with timestamp
         const timestamp = new Date().toISOString().split('T')[1].slice(0, -1);
         console.log(`${timestamp} [${event.type}]`);
 
@@ -73,13 +86,15 @@ class RealtimeClient {
                         '<no text>');
                 }
                 break;
-            // Add other event handlers as needed
+            case 'error':
+                console.error('🔴 Error:', event.error);
+                break;
         }
     }
 
     async uploadAudio(filename) {
         const rawData = fs.readFileSync(filename);
-        const chunkSize = 1024 * 1024;  // 1MB chunks for better network efficiency
+        const chunkSize = 1024 * 1024;  // 1MB chunks
         
         for (let i = 0; i < rawData.length; i += chunkSize) {
             const chunk = rawData.slice(i, Math.min(i + chunkSize, rawData.length));
@@ -93,45 +108,10 @@ class RealtimeClient {
         this.ws.send(JSON.stringify({type: 'response.create'}));
     }
 
-    async handleAudioDelta(base64Audio) {
-        // Convert base64 to ArrayBuffer
-        const binaryString = atob(base64Audio);
-        const len = binaryString.length;
-        const bytes = new Uint8Array(len);
-        for (let i = 0; i < len; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
-        }
-
-        // Convert to audio data
-        const audioBuffer = await this.audioContext.decodeAudioData(bytes.buffer);
-        
-        // Queue the audio
-        this.audioQueue.push(audioBuffer);
-        
-        // Start playing if not already playing
-        if (!this.isPlaying) {
-            this.playNextInQueue();
-        }
-    }
-
-    async playNextInQueue() {
-        if (this.audioQueue.length === 0) {
-            this.isPlaying = false;
-            return;
-        }
-
-        this.isPlaying = true;
-        const audioBuffer = this.audioQueue.shift();
-        
-        const source = this.audioContext.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(this.audioContext.destination);
-        
-        source.onended = () => {
-            this.playNextInQueue();
-        };
-        
-        source.start();
+    handleAudioDelta(base64Audio) {
+        // Convert base64 to buffer and play directly through speaker
+        const buffer = Buffer.from(base64Audio, 'base64');
+        this.speaker.write(buffer);
     }
 
     // Method to send audio buffer
@@ -167,20 +147,18 @@ class RealtimeClient {
         if (this.ws) {
             this.ws.close();
         }
-        if (this.audioContext) {
-            this.audioContext.close();
+        if (this.speaker) {
+            this.speaker.end();
         }
     }
 }
 
-
 const client = new RealtimeClient(process.env.OPENAI_API_KEY);
 client.connect();
 
-// To send audio:
-client.sendAudioBuffer(base64AudioData);
-client.commitAudioBuffer();
-client.createResponse();
-
-// To cleanup:
-client.disconnect();
+// Graceful shutdown
+process.on('SIGINT', () => {
+    console.log('\nGracefully shutting down...');
+    client.disconnect();
+    process.exit();
+});
