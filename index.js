@@ -2,37 +2,177 @@ import WebSocket from "ws";
 import fs from 'fs';
 import dotenv from 'dotenv';
 import Speaker from 'speaker';
-import fetch from 'node-fetch';
+import recorder from 'node-record-lpcm16';
+import wav from 'wav';
+import { createReadStream } from 'fs';
+import readline from 'readline';
+import VAD from 'node-vad';
+import { Writable } from 'stream';
 
 dotenv.config();
 
 class RealtimeClient {
     constructor(apiKey) {
         this.apiKey = apiKey;
-        this.functionCallBuffers = new Map(); // Buffer for accumulating function call arguments
+        this.functionCallBuffers = new Map();
+        this.isRecording = false;
+        this.recordingStream = null;
+        this.typingSoundStream = null;
+        this.typingSpeaker = null;
+        this.isAISpeaking = false;
+        this.lastUserSpeechTime = 0;
+        this.vad = new VAD(VAD.Mode.NORMAL);
+        this.audioQueue = [];
+        this.isPlayingAudio = false;
+        
+        // Set up keyboard input handling
+        readline.emitKeypressEvents(process.stdin);
+        process.stdin.setRawMode(true);
+        
+        process.stdin.on('keypress', (str, key) => {
+            if (key.name === 'space') {
+                console.log('Space pressed - stopping recording and requesting response');
+                this.stopRecordingAndRequestResponse();
+            } else if (key.ctrl && key.name === 'c') {
+                gracefulShutdown();
+            }
+        });
     }
 
     async writeNote(title, content, date = new Date().toISOString().split('T')[0]) {
+        // Return dummy successful response
+        return { success: true };
+    }
+
+    async checkForSpeech(audioData) {
         try {
-            const response = await fetch('https://tutor.mleclub.com/api/append-note', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    title,
-                    content,
-                    date
-                })
-            });
-
-            if (!response.ok) {
-                return { success: false, error: `HTTP ${response.status} error writing note: ${response.statusText}` }
+            const speechProb = await this.vad.processAudio(audioData, 24000);
+            const now = Date.now();
+            
+            // Only consider interruptions if AI is speaking and it's been at least 500ms since last detection
+            if (speechProb > 0.8 && this.isAISpeaking && (now - this.lastUserSpeechTime) > 500) {
+                console.log('🎤 User interrupt detected (speech probability:', speechProb.toFixed(2) + ')');
+                this.lastUserSpeechTime = now;
+                this.handleInterruption();
             }
-
-            return { success: true }
         } catch (error) {
-            return { success: false, error: `Error writing note: ${error}` }
+            console.error('Error processing audio for VAD:', error);
+        }
+    }
+
+    handleInterruption() {
+        console.log('🛑 Interrupting AI response');
+        this.isAISpeaking = false;
+        
+        // Stop current audio playback
+        if (this.speaker) {
+            this.speaker.end();
+            this.speaker = null;
+        }
+        
+        // Cancel current AI response
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify({type: 'response.cancel'}));
+            
+            // Start a new recording session after a brief delay
+            setTimeout(() => {
+                this.startRecording();
+            }, 100);
+        }
+    }
+
+    startRecording() {
+        if (this.isRecording) {
+            console.log('Already recording...');
+            return;
+        }
+
+        this.isRecording = true;
+        console.log('🎤 Starting recording... (Press SPACE to stop and get response)');
+
+        this.recordingStream = recorder.record({
+            sampleRate: 24000,
+            channels: 1,
+            audioType: 'raw'
+        });
+
+        // Create a transform stream for VAD processing
+        const vadStream = new Writable({
+            write: async (chunk, encoding, callback) => {
+                await this.checkForSpeech(chunk);
+                callback();
+            }
+        });
+
+        // Pipe audio to both VAD and WebSocket
+        this.recordingStream.stream()
+            .on('data', (chunk) => {
+                // Send to VAD
+                vadStream.write(chunk);
+                
+                // Send to WebSocket if connected
+                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    this.ws.send(JSON.stringify({
+                        type: 'input_audio_buffer.append',
+                        audio: chunk.toString('base64')
+                    }));
+                }
+            });
+    }
+
+    stopRecording() {
+        if (!this.isRecording) {
+            console.log('Not currently recording...');
+            return;
+        }
+
+        console.log('🎤 Stopping recording...');
+        this.isRecording = false;
+        
+        if (this.recordingStream) {
+            this.recordingStream.stop();
+            this.recordingStream = null;
+        }
+    }
+
+    stopRecordingAndRequestResponse() {
+        if (this.isRecording) {
+            this.stopRecording();
+            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                this.ws.send(JSON.stringify({type: 'input_audio_buffer.commit'}));
+                this.ws.send(JSON.stringify({type: 'response.create'}));
+            }
+        }
+    }
+
+    playTypingSound() {
+        this.typingSpeaker = new Speaker({
+            channels: 2,
+            bitDepth: 16,
+            sampleRate: 44100
+        });
+
+        const reader = new wav.Reader();
+        
+        this.typingSoundStream = createReadStream('data/typing.wav')
+            .pipe(reader)
+            .pipe(this.typingSpeaker);
+
+        this.typingSoundStream.on('end', () => {
+            if (this.functionCallBuffers.size > 0) {
+                this.playTypingSound();
+            }
+        });
+    }
+
+    stopTypingSound() {
+        if (this.typingSoundStream) {
+            this.typingSoundStream.destroy();
+            this.typingSoundStream = null;
+        }
+        if (this.typingSpeaker) {
+            this.typingSpeaker.end();
+            this.typingSpeaker = null;
         }
     }
 
@@ -84,7 +224,7 @@ class RealtimeClient {
                 }
             }));
 
-            this.uploadAudio('./data/sasha-note.raw');
+            this.startRecording();
         };
 
         this.ws.onmessage = async (event) => {
@@ -99,6 +239,8 @@ class RealtimeClient {
 
         this.ws.onclose = () => {
             console.log('🔵 Connection closed');
+            this.stopRecording();
+            this.stopTypingSound();
             if (this.speaker) {
                 this.speaker.end();
             }
@@ -110,7 +252,12 @@ class RealtimeClient {
         this.speaker = new Speaker({
             channels: 1,
             bitDepth: 16,
-            sampleRate: 24000
+            sampleRate: 24000,
+            bufferSize: 4096
+        });
+        
+        this.speaker.on('drain', () => {
+            console.log('🔊 Audio buffer drained');
         });
     }
 
@@ -120,7 +267,11 @@ class RealtimeClient {
 
         switch (event.type) {
             case 'response.audio.delta':
-                if (!this.speaker) {
+                // Stop typing sound when AI starts speaking
+                this.stopTypingSound();
+                this.isAISpeaking = true;
+                
+                if (!this.speaker || this.speaker.destroyed) {
                     console.log('🔊 Initializing speaker');
                     this.initializeSpeaker();
                 }
@@ -128,6 +279,10 @@ class RealtimeClient {
                 break;
 
             case 'response.function_call_arguments.delta':
+                if (this.functionCallBuffers.size === 0) {
+                    console.log('⌨️ Starting typing sound...');
+                    this.playTypingSound();
+                }
                 this.handleFunctionCallDelta(event);
                 break;
 
@@ -137,26 +292,38 @@ class RealtimeClient {
                 break;
 
             case 'response.done':
+                console.log('🔊 Response complete');
+                this.isAISpeaking = false;
+                
+                // Clean up speaker if it's still around
                 if (this.speaker) {
-                    console.log('🔊 Finished speaking');
                     this.speaker.end();
+                    this.speaker = null;
                 }
+                
+                // Start recording again after response is done
+                this.startRecording();
                 break;
 
             case 'conversation.item.created':
-                if (event.item.role === 'assistant') {
-                    console.log('🤖 Assistant:', 
-                        event.item.content?.[0]?.text?.value || 
-                        event.item.content?.[0]?.transcript || 
-                        '<no text>');
-                } else if (event.item.role === 'user') {
-                    console.log('👤 User:', 
-                        event.item.content?.[0]?.text?.value || 
-                        event.item.content?.[0]?.transcript || 
-                        event.item.content || 
-                        '<no text>');
+                const itemType = event.item.type;
+                const itemId = event.item.id;
+                
+                if (itemType === 'message') {
+                    if (event.item.role === 'assistant') {
+                        const text = event.item.content?.[0]?.text?.value;
+                        console.log(`🤖 Assistant message [${itemId}]: ${text || 'generating response...'}`);
+                    } else if (event.item.role === 'user') {
+                        const transcript = event.item.content?.[0]?.transcript;
+                        console.log(`👤 User message [${itemId}]: ${transcript || 'processing audio...'}`);
+                    }
+                } else if (itemType === 'function_call') {
+                    console.log(`🔧 Function call [${itemId}]: ${event.item.name}`);
+                } else if (itemType === 'function_call_output') {
+                    console.log(`📤 Function output [${itemId}] for call ${event.item.call_id}`);
                 }
                 break;
+                
             case 'error':
                 console.error('🔴 Error:', event.error);
                 break;
@@ -164,12 +331,10 @@ class RealtimeClient {
     }
 
     handleFunctionCallDelta(event) {
-        // Initialize buffer if it doesn't exist for this call
         if (!this.functionCallBuffers.has(event.call_id)) {
             this.functionCallBuffers.set(event.call_id, '');
         }
 
-        // Append the delta to the buffer
         const currentBuffer = this.functionCallBuffers.get(event.call_id);
         this.functionCallBuffers.set(event.call_id, currentBuffer + event.delta);
     }
@@ -182,61 +347,77 @@ class RealtimeClient {
                 const result = await this.writeNote(args.title, args.content, args.date);
                 
                 console.log('🔧 Function call response:', result);
-                this.ws.send(JSON.stringify({
+                
+                // Send function output
+                const outputEvent = {
                     type: 'conversation.item.create',
                     item: {
                         type: 'function_call_output',
                         call_id: event.call_id,
                         output: JSON.stringify(result)
                     }
-                }));
+                };
+                console.log('📤 Sending function output:', outputEvent);
+                this.ws.send(JSON.stringify(outputEvent));
+                
+                // Request next response
                 this.ws.send(JSON.stringify({type: 'response.create'}));
             }
         } catch (error) {
             console.error('Error handling function call:', error);
             
-            // Send error response
             this.ws.send(JSON.stringify({
-                type: 'function_call.response',
-                call_id: event.call_id,
-                response: JSON.stringify({ 
-                    success: false, 
-                    error: error.message 
-                })
+                type: 'conversation.item.create',
+                item: {
+                    type: 'function_call_output',
+                    call_id: event.call_id,
+                    output: JSON.stringify({ 
+                        success: false, 
+                        error: error.message 
+                    })
+                }
             }));
         }
 
-        // Clear the buffer for this call
         this.functionCallBuffers.delete(event.call_id);
     }
 
     handleAudioDelta(base64Audio) {
+        if (!this.isAISpeaking) return;  // Don't play if we've been interrupted
+        
         const buffer = Buffer.from(base64Audio, 'base64');
-        this.speaker.write(buffer);
-    }
-
-    async uploadAudio(filename) {
-        const rawData = fs.readFileSync(filename);
-        const chunkSize = 1024 * 1024;  // 1MB chunks
-        
-        for (let i = 0; i < rawData.length; i += chunkSize) {
-            const chunk = rawData.slice(i, Math.min(i + chunkSize, rawData.length));
-            this.ws.send(JSON.stringify({
-                type: 'input_audio_buffer.append',
-                audio: chunk.toString('base64')
-            }));
+        if (buffer.length === 0) {
+            if (this.speaker) {
+                this.speaker.end();
+                this.speaker = null;
+            }
+            return;
         }
-        
-        this.ws.send(JSON.stringify({type: 'input_audio_buffer.commit'}));
-        this.ws.send(JSON.stringify({type: 'response.create'}));
+
+        if (!this.speaker || this.speaker.destroyed) {
+            console.log('🔊 Initializing speaker');
+            this.initializeSpeaker();
+        }
+
+        try {
+            this.speaker.write(buffer);
+        } catch (error) {
+            console.error('Error playing audio:', error);
+        }
     }
 
     disconnect() {
+        this.stopRecording();
+        this.stopTypingSound();
+        this.isAISpeaking = false;
+        this.isPlayingAudio = false;
+        this.audioQueue = [];
         if (this.ws) {
             this.ws.close();
         }
         if (this.speaker) {
             this.speaker.end();
+            this.speaker = null;
         }
     }
 }
