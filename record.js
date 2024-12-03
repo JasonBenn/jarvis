@@ -10,7 +10,8 @@ const recording = recorder.record({
 });
 
 // Save as raw PCM file (no WAV header)
-recording.stream().pipe(fs.createWriteStream('data/24khz.raw'));
+const outputFile = `data/${Date.now()}.raw`;
+recording.stream().pipe(fs.createWriteStream(outputFile));
 
 process.on('SIGINT', () => {
     console.log('\nStopping recording...');
