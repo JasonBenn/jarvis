@@ -1,8 +1,7 @@
 import WebSocket from "ws";
 
 export interface APIConfig {
-  apiKey: string;
-  model: string;
+  model?: string;
   toolDefinitions?: ToolDefinition[];
 }
 

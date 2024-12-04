@@ -7,7 +7,7 @@ export class RealtimeAPIClient {
   private readonly events: APIEvents;
   private responseInProgress: boolean = false;
 
-  constructor(config: APIConfig, events: APIEvents = {}) {
+  constructor(config: APIConfig = {}, events: APIEvents = {}) {
     this.config = {
       ...config,
       model: config.model || "gpt-4o-realtime-preview-2024-10-01",
@@ -20,7 +20,7 @@ export class RealtimeAPIClient {
 
     this.ws = new WebSocket(wsUrl, {
       headers: {
-        Authorization: `Bearer ${this.config.apiKey}`,
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY!}`,
         "OpenAI-Beta": "realtime=v1",
       },
     });

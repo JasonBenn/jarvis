@@ -2,9 +2,7 @@ import dotenv from "dotenv";
 import { RealtimeAPIClient } from "./modules/api/RealtimeAPIClient";
 dotenv.config();
 
-const client = new RealtimeAPIClient({
-  apiKey: process.env.OPENAI_API_KEY!,
-});
+const client = new RealtimeAPIClient();
 client.connect();
 
 function gracefulShutdown() {
