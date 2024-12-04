@@ -1,11 +1,8 @@
-import WebSocket from 'ws';
+import WebSocket from "ws";
 
 export interface APIConfig {
   apiKey: string;
   model: string;
-  voice: string;
-  inputAudioFormat: string;
-  outputAudioFormat: string;
   toolDefinitions?: ToolDefinition[];
 }
 
@@ -31,16 +28,14 @@ export interface APIEvents {
 }
 
 export type APIMessage = {
-  type: string;
+  type: APIMessageType;
   [key: string]: unknown;
-}
+};
 
-export interface IRealtimeAPIClient {
-  connect(): void;
-  disconnect(): void;
-  isConnected(): boolean;
-  sendAudioChunk(chunk: Buffer): void;
-  commitAudio(): void;
-  cancelResponse(): void;
-  sendFunctionResponse(callId: string, response: unknown): void;
+export enum APIMessageType {
+  ResponseAudioDelta = "response.audio.delta",
+  ResponseAudioTranscriptDelta = "response.audio_transcript.delta",
+  ResponseFunctionCallArgumentsDelta = "response.function_call_arguments.delta",
+  ResponseFunctionCallArgumentsDone = "response.function_call_arguments.done",
+  Error = "error",
 }

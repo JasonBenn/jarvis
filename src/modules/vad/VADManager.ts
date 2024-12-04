@@ -1,62 +1,54 @@
-import VAD from 'node-vad';
-import { VADConfig, VADEvents, VADMode, IVADManager } from './types';
+import { EventEmitter } from "events";
+import VAD from "node-vad";
 
-export class VADManager implements IVADManager {
+interface VADOptions {
+  mode?: number;
+  sampleRate?: number;
+}
+
+interface SpeechEvent {
+  state: boolean;
+  start: boolean;
+  end: boolean;
+  startTime: number;
+  duration: number;
+}
+
+export class VADManager extends EventEmitter {
   private vad: VAD;
-  private config: VADConfig;
-  private readonly events: VADEvents;
-  private lastSpeechTime: number = 0;
-  private isSpeaking: boolean = false;
+  private speechDetectionPromise: { resolve: (value: boolean) => void } | null =
+    null;
 
-  constructor(config: VADConfig, events: VADEvents = {}) {
-    this.config = {
-      ...config,
-      debounceTime: config.debounceTime || 500,
-    };
-
-    this.events = events;
-    this.vad = new VAD(this.config.mode, this.config.sampleRate);
+  constructor(options: VADOptions = {}) {
+    super();
+    this.vad = new VAD({ mode: options.mode || VAD.Mode.NORMAL });
   }
 
-  public async processAudio(audioData: Buffer): Promise<void> {
+  waitForSpeech(): Promise<boolean> {
+    return new Promise((resolve) => {
+      this.speechDetectionPromise = { resolve };
+    });
+  }
+
+  async processAudio(chunk: Buffer): Promise<void> {
     try {
-      const speechProb = await this.vad.processAudio(audioData);
-      const now = Date.now();
+      this.vad.processAudio(chunk).on("data", (event: SpeechEvent) => {
+        this.emit("speech", event);
 
-      // Check if we've exceeded the debounce time
-      const timeElapsed = now - this.lastSpeechTime;
-
-      if (speechProb > this.config.speechThreshold && timeElapsed > this.config.debounceTime) {
-        if (!this.isSpeaking) {
-          this.isSpeaking = true;
-          this.events.onSpeechStart?.();
+        if (event.state && this.speechDetectionPromise) {
+          this.speechDetectionPromise.resolve(true);
+          this.speechDetectionPromise = null;
         }
-        this.lastSpeechTime = now;
-      } else if (speechProb <= this.config.speechThreshold && this.isSpeaking) {
-        this.isSpeaking = false;
-        this.events.onSpeechEnd?.();
-      }
+      });
     } catch (error) {
-      this.events.onError?.(error instanceof Error ? error : new Error(String(error)));
+      this.emit("error", error);
     }
   }
 
-  public setMode(mode: VADMode): void {
-    this.config.mode = mode;
-    this.vad = new VAD(mode, this.config.sampleRate);
-  }
-
-  public setSpeechThreshold(threshold: number): void {
-    if (threshold < 0 || threshold > 1) {
-      throw new Error('Speech threshold must be between 0 and 1');
+  cleanup(): void {
+    if (this.speechDetectionPromise) {
+      this.speechDetectionPromise.resolve(false);
+      this.speechDetectionPromise = null;
     }
-    this.config.speechThreshold = threshold;
-  }
-
-  public cleanup(): void {
-    this.isSpeaking = false;
-    this.lastSpeechTime = 0;
-    // Currently node-vad doesn't expose a cleanup method
-    // If it did in the future, we would call it here
   }
 }

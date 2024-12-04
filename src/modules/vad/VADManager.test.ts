@@ -1,91 +1,63 @@
-import { VADManager } from './VADManager';
-import { VADMode, VADConfig } from './types';
-import VAD from 'node-vad';
+import { VADManager } from "./VADManager";
+import VAD from "node-vad";
+import fs from "fs";
+import path from "path";
 
-jest.mock('node-vad');
+jest.mock("node-vad");
 
-describe('VADManager', () => {
-  const defaultConfig = {
-    sampleRate: 24000,
-    mode: VADMode.NORMAL,
-    speechThreshold: 0.8,
-    silenceThreshold: 0.3,
-    debounceTime: 500
-  };
-
+describe("VADManager", () => {
   let vadManager: VADManager;
-  let mockOnSpeechStart: jest.Mock;
-  let mockOnSpeechEnd: jest.Mock;
-  let mockOnError: jest.Mock;
   let mockProcessAudio: jest.Mock;
 
   beforeEach(() => {
     jest.clearAllMocks();
 
-    mockOnSpeechStart = jest.fn();
-    mockOnSpeechEnd = jest.fn();
-    mockOnError = jest.fn();
-    mockProcessAudio = jest.fn();
+    mockProcessAudio = jest.fn().mockReturnValue({
+      on: jest.fn((event, callback) => {
+        if (event === "data") {
+          callback({
+            state: true,
+            start: true,
+            end: false,
+            startTime: Date.now(),
+            duration: 0,
+          });
+        }
+      }),
+    });
 
-    // Mock VAD processAudio method
-    (VAD as jest.Mock).mockImplementation(() => ({
-      processAudio: mockProcessAudio
+    (VAD as unknown as jest.Mock).mockImplementation(() => ({
+      processAudio: mockProcessAudio,
     }));
 
-    vadManager = new VADManager(defaultConfig, {
-      onSpeechStart: mockOnSpeechStart,
-      onSpeechEnd: mockOnSpeechEnd,
-      onError: mockOnError
-    });
+    vadManager = new VADManager({ mode: VAD.Mode.NORMAL });
   });
 
-  describe('speech detection', () => {
-    it('should trigger speech start event when probability exceeds threshold', async () => {
-      mockProcessAudio.mockResolvedValueOnce(0.9);
-      
-      await vadManager.processAudio(Buffer.from([1, 2, 3, 4]));
-      
-      expect(mockOnSpeechStart).toHaveBeenCalled();
-      expect(mockOnSpeechEnd).not.toHaveBeenCalled();
-    });
+  it("should emit speech event and resolve promise when speech is detected", async () => {
+    const onSpeech = jest.fn();
+    vadManager.on("speech", onSpeech);
 
-    it('should trigger speech end event when probability falls below threshold', async () => {
-      // First detect speech
-      mockProcessAudio.mockResolvedValueOnce(0.9);
-      await vadManager.processAudio(Buffer.from([1, 2, 3, 4]));
-      
-      // Then detect silence
-      mockProcessAudio.mockResolvedValueOnce(0.2);
-      await vadManager.processAudio(Buffer.from([1, 2, 3, 4]));
-      
-      expect(mockOnSpeechStart).toHaveBeenCalledTimes(1);
-      expect(mockOnSpeechEnd).toHaveBeenCalledTimes(1);
-    });
+    const speechPromise = vadManager.waitForSpeech();
+    await vadManager.processAudio(Buffer.from([1, 2, 3, 4]));
 
-    it('should respect debounce time', async () => {
-      mockProcessAudio.mockResolvedValue(0.9);
-      
-      await vadManager.processAudio(Buffer.from([1, 2, 3, 4]));
-      await vadManager.processAudio(Buffer.from([1, 2, 3, 4]));
-      
-      expect(mockOnSpeechStart).toHaveBeenCalledTimes(1);
-    });
+    const result = await speechPromise;
+    expect(result).toBe(true);
+    expect(onSpeech).toHaveBeenCalledWith(
+      expect.objectContaining({
+        state: true,
+        start: true,
+        end: false,
+        startTime: expect.any(Number),
+        duration: 0,
+      })
+    );
   });
 
-  describe('cleanup', () => {
-    it('should reset state on cleanup', async () => {
-      // First detect speech
-      mockProcessAudio.mockResolvedValueOnce(0.9);
-      await vadManager.processAudio(Buffer.from([1, 2, 3, 4]));
-      
-      // Perform cleanup
-      vadManager.cleanup();
-      
-      // Should trigger speech start again after cleanup
-      mockProcessAudio.mockResolvedValueOnce(0.9);
-      await vadManager.processAudio(Buffer.from([1, 2, 3, 4]));
-      
-      expect(mockOnSpeechStart).toHaveBeenCalledTimes(2);
-    });
+  it("should resolve promise with false on cleanup if no speech detected", async () => {
+    const speechPromise = vadManager.waitForSpeech();
+    vadManager.cleanup();
+
+    const result = await speechPromise;
+    expect(result).toBe(false);
   });
 });

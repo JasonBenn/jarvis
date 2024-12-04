@@ -1,15 +1,15 @@
-import { RealtimeAPIClient } from './RealtimeAPIClient';
-import WebSocket from 'ws';
+import { RealtimeAPIClient } from "./RealtimeAPIClient";
+import WebSocket from "ws";
 
-jest.mock('ws');
+jest.mock("ws");
 
-describe('RealtimeAPIClient', () => {
+describe("RealtimeAPIClient", () => {
   const defaultConfig = {
-    apiKey: 'test-api-key',
-    model: 'gpt-4o-realtime-preview-2024-10-01',
-    voice: 'alloy',
-    inputAudioFormat: 'pcm16',
-    outputAudioFormat: 'pcm16'
+    apiKey: "test-api-key",
+    model: "gpt-4o-realtime-preview-2024-10-01",
+    voice: "alloy",
+    inputAudioFormat: "pcm16",
+    outputAudioFormat: "pcm16",
   };
 
   let apiClient: RealtimeAPIClient;
@@ -39,11 +39,13 @@ describe('RealtimeAPIClient', () => {
       on: jest.fn(),
       send: mockSend,
       close: jest.fn(),
-      readyState: WebSocket.OPEN
+      readyState: WebSocket.OPEN,
     } as unknown as jest.Mocked<WebSocket>;
 
     const MockWebSocket = WebSocket as jest.MockedClass<typeof WebSocket>;
-    (MockWebSocket as unknown as jest.Mock).mockImplementation(() => mockWebSocket);
+    (MockWebSocket as unknown as jest.Mock).mockImplementation(
+      () => mockWebSocket
+    );
 
     apiClient = new RealtimeAPIClient(defaultConfig, {
       onAudioData: mockOnAudioData,
@@ -51,144 +53,150 @@ describe('RealtimeAPIClient', () => {
       onFunctionCall: mockOnFunctionCall,
       onError: mockOnError,
       onOpen: mockOnOpen,
-      onClose: mockOnClose
+      onClose: mockOnClose,
     });
   });
 
-  describe('connection', () => {
-    it('should connect with correct configuration', () => {
+  describe("connection", () => {
+    it("should connect with correct configuration", () => {
       apiClient.connect();
 
       expect(WebSocket).toHaveBeenCalledWith(
         expect.stringContaining(defaultConfig.model),
         expect.objectContaining({
           headers: expect.objectContaining({
-            'Authorization': `Bearer ${defaultConfig.apiKey}`
-          })
+            Authorization: `Bearer ${defaultConfig.apiKey}`,
+          }),
         })
       );
     });
 
-    it('should set up session on connection', () => {
+    it("should set up session on connection", () => {
       apiClient.connect();
 
       // Get the 'open' event handler and call it
       const onOpen = (mockWebSocket.on as jest.Mock).mock.calls.find(
-        call => call[0] === 'open'
+        (call) => call[0] === "open"
       )[1];
       onOpen();
 
       expect(mockSend).toHaveBeenCalledWith(
-        expect.stringContaining('session.update')
+        expect.stringContaining("session.update")
       );
       expect(mockOnOpen).toHaveBeenCalled();
     });
   });
 
-  describe('message handling', () => {
+  describe("message handling", () => {
     beforeEach(() => {
       apiClient.connect();
     });
 
-    it('should handle audio data', () => {
+    it("should handle audio data", () => {
       const onMessage = (mockWebSocket.on as jest.Mock).mock.calls.find(
-        call => call[0] === 'message'
+        (call) => call[0] === "message"
       )[1];
 
-      const testAudio = 'test-audio-data';
-      onMessage(JSON.stringify({
-        type: 'response.audio.delta',
-        delta: testAudio
-      }));
+      const testAudio = "test-audio-data";
+      onMessage(
+        JSON.stringify({
+          type: "response.audio.delta",
+          delta: testAudio,
+        })
+      );
 
       expect(mockOnAudioData).toHaveBeenCalledWith(
-        Buffer.from(testAudio, 'base64')
+        Buffer.from(testAudio, "base64")
       );
     });
 
-    it('should handle transcripts', () => {
+    it("should handle transcripts", () => {
       const onMessage = (mockWebSocket.on as jest.Mock).mock.calls.find(
-        call => call[0] === 'message'
+        (call) => call[0] === "message"
       )[1];
 
-      const testTranscript = 'Hello, world!';
-      onMessage(JSON.stringify({
-        type: 'response.audio_transcript.delta',
-        delta: testTranscript
-      }));
+      const testTranscript = "Hello, world!";
+      onMessage(
+        JSON.stringify({
+          type: "response.audio_transcript.delta",
+          delta: testTranscript,
+        })
+      );
 
       expect(mockOnTranscript).toHaveBeenCalledWith(testTranscript);
     });
 
-    it('should handle function calls', () => {
+    it("should handle function calls", () => {
       const onMessage = (mockWebSocket.on as jest.Mock).mock.calls.find(
-        call => call[0] === 'message'
+        (call) => call[0] === "message"
       )[1];
 
-      const testCallId = 'test-call-id';
+      const testCallId = "test-call-id";
       const testArgs = '{"arg": "value"}';
-      onMessage(JSON.stringify({
-        type: 'response.function_call_arguments.delta',
-        call_id: testCallId,
-        name: 'test_function',
-        arguments: testArgs
-      }));
+      onMessage(
+        JSON.stringify({
+          type: "response.function_call_arguments.delta",
+          call_id: testCallId,
+          name: "test_function",
+          arguments: testArgs,
+        })
+      );
 
       expect(mockOnFunctionCall).toHaveBeenCalledWith(
-        'test_function',
+        "test_function",
         testArgs
       );
     });
   });
 
-  describe('audio operations', () => {
+  describe("audio operations", () => {
     beforeEach(() => {
       apiClient.connect();
     });
 
-    it('should send audio chunks', () => {
+    it("should send audio chunks", () => {
       const testChunk = Buffer.from([1, 2, 3, 4]);
       apiClient.sendAudioChunk(testChunk);
 
       expect(mockSend).toHaveBeenCalledWith(
-        expect.stringContaining('input_audio_buffer.append')
+        expect.stringContaining("input_audio_buffer.append")
       );
     });
 
-    it('should commit audio and request response', () => {
+    it("should commit audio and request response", () => {
       apiClient.commitAudio();
 
       expect(mockSend).toHaveBeenCalledWith(
-        expect.stringContaining('input_audio_buffer.commit')
+        expect.stringContaining("input_audio_buffer.commit")
       );
       expect(mockSend).toHaveBeenCalledWith(
-        expect.stringContaining('response.create')
+        expect.stringContaining("response.create")
       );
     });
 
-    it('should cancel responses', () => {
-      apiClient.commitAudio();  // Start a response
+    it("should cancel responses", () => {
+      apiClient.commitAudio(); // Start a response
       apiClient.cancelResponse();
 
       expect(mockSend).toHaveBeenCalledWith(
-        expect.stringContaining('response.cancel')
+        expect.stringContaining("response.cancel")
       );
     });
   });
 
-  describe('function responses', () => {
+  describe("function responses", () => {
     beforeEach(() => {
       apiClient.connect();
     });
 
-    it('should send function responses correctly', () => {
-      const testCallId = 'test-call-id';
-      const testResponse = { result: 'success' };
-      
+    it("should send function responses correctly", () => {
+      const testCallId = "test-call-id";
+      const testResponse = { result: "success" };
+
       apiClient.sendFunctionResponse(testCallId, testResponse);
 
       expect(mockSend).toHaveBeenCalledWith(
-        expect.stringContaining('function_call_output')
+        expect.stringContaining("function_call_output")
       );
       expect(mockSend).toHaveBeenCalledWith(
         expect.stringContaining(testCallId)
@@ -196,28 +204,28 @@ describe('RealtimeAPIClient', () => {
     });
   });
 
-  describe('error handling', () => {
+  describe("error handling", () => {
     beforeEach(() => {
       apiClient.connect();
     });
 
-    it('should handle WebSocket errors', () => {
+    it("should handle WebSocket errors", () => {
       const onError = (mockWebSocket.on as jest.Mock).mock.calls.find(
-        call => call[0] === 'error'
+        (call) => call[0] === "error"
       )[1];
 
-      const testError = new Error('WebSocket error');
+      const testError = new Error("WebSocket error");
       onError(testError);
 
       expect(mockOnError).toHaveBeenCalledWith(testError);
     });
 
-    it('should handle message parsing errors', () => {
+    it("should handle message parsing errors", () => {
       const onMessage = (mockWebSocket.on as jest.Mock).mock.calls.find(
-        call => call[0] === 'message'
+        (call) => call[0] === "message"
       )[1];
 
-      onMessage('invalid json');
+      onMessage("invalid json");
 
       expect(mockOnError).toHaveBeenCalled();
     });
