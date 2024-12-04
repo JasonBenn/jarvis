@@ -1,5 +1,4 @@
 import { AudioManager } from "../audio/AudioManager";
-import { VADManager } from "../vad/VADManager";
 import { RecordingManager } from "../recording/RecordingManager";
 import { RealtimeAPIClient } from "../api/RealtimeAPIClient";
 import {
@@ -12,7 +11,6 @@ import {
 
 export class Orchestrator implements IOrchestratorCommands {
   private audioManager: AudioManager;
-  private vadManager: VADManager;
   private recordingManager: RecordingManager;
   private apiClient: RealtimeAPIClient;
   private state: OrchestratorState = OrchestratorState.INITIALIZING;
@@ -39,8 +37,6 @@ export class Orchestrator implements IOrchestratorCommands {
     this.audioManager = new AudioManager(config.audio, {
       onError: this.handleError.bind(this),
     });
-
-    this.vadManager = new VADManager(config.vad);
 
     this.recordingManager = new RecordingManager(config.recording, {
       onData: this.handleRecordingData.bind(this),
@@ -86,34 +82,15 @@ export class Orchestrator implements IOrchestratorCommands {
     this.setState(OrchestratorState.READY);
   }
 
-  public interruptAI(): void {
-    if (this.state === OrchestratorState.AI_SPEAKING) {
-      this.audioManager.stop();
-      this.apiClient.cancelResponse();
-      this.setState(OrchestratorState.READY);
-    }
-  }
-
   public disconnect(): void {
     this.audioManager.cleanup();
-    this.vadManager.cleanup();
     this.recordingManager.cleanup();
     this.apiClient.disconnect();
     this.setState(OrchestratorState.DISCONNECTED);
   }
 
   private handleRecordingData(chunk: Buffer): void {
-    // Process audio through VAD and send to API
-    // this.vadManager.processAudio(chunk, this.handleUserSpeechStart);
     this.apiClient.sendAudioChunk(chunk);
-  }
-
-  private handleUserSpeechStart(): void {
-    // If AI is speaking when user starts talking, interrupt it
-    if (this.state === OrchestratorState.AI_SPEAKING) {
-      this.interruptAI();
-      this.startRecording();
-    }
   }
 
   private handleAIAudio(audioData: Buffer): void {

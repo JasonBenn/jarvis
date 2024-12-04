@@ -6,7 +6,6 @@ import recorder from 'node-record-lpcm16';
 import wav from 'wav';
 import { createReadStream } from 'fs';
 import readline from 'readline';
-import VAD from 'node-vad';
 import { Writable } from 'stream';
 
 dotenv.config();
@@ -21,7 +20,6 @@ class RealtimeClient {
         this.typingSpeaker = null;
         this.isAISpeaking = false;
         this.lastUserSpeechTime = 0;
-        this.vad = new VAD(VAD.Mode.NORMAL);
         this.audioQueue = [];
         this.isPlayingAudio = false;
         
@@ -42,22 +40,6 @@ class RealtimeClient {
     async writeNote(title, content, date = new Date().toISOString().split('T')[0]) {
         // Return dummy successful response
         return { success: true };
-    }
-
-    async checkForSpeech(audioData) {
-        try {
-            const speechProb = await this.vad.processAudio(audioData, 24000);
-            const now = Date.now();
-            
-            // Only consider interruptions if AI is speaking and it's been at least 500ms since last detection
-            if (speechProb > 0.8 && this.isAISpeaking && (now - this.lastUserSpeechTime) > 500) {
-                console.log('🎤 User interrupt detected (speech probability:', speechProb.toFixed(2) + ')');
-                this.lastUserSpeechTime = now;
-                this.handleInterruption();
-            }
-        } catch (error) {
-            console.error('Error processing audio for VAD:', error);
-        }
     }
 
     handleInterruption() {
@@ -96,20 +78,9 @@ class RealtimeClient {
             audioType: 'raw'
         });
 
-        // Create a transform stream for VAD processing
-        const vadStream = new Writable({
-            write: async (chunk, encoding, callback) => {
-                await this.checkForSpeech(chunk);
-                callback();
-            }
-        });
-
-        // Pipe audio to both VAD and WebSocket
+        // Pipe audio to WebSocket
         this.recordingStream.stream()
             .on('data', (chunk) => {
-                // Send to VAD
-                vadStream.write(chunk);
-                
                 // Send to WebSocket if connected
                 if (this.ws && this.ws.readyState === WebSocket.OPEN) {
                     this.ws.send(JSON.stringify({
