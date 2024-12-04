@@ -1,17 +1,9 @@
-import { AudioConfig } from "../audio/types";
 import { RecordingConfig } from "../recording/types";
 import { APIConfig } from "../api/types";
 
 export interface OrchestratorConfig {
-  audio: AudioConfig;
   recording: RecordingConfig;
   api: APIConfig;
-}
-
-export interface OrchestratorEvents {
-  onReady?: () => void;
-  onError?: (error: Error) => void;
-  onStateChange?: (state: OrchestratorState) => void;
 }
 
 export enum OrchestratorState {

@@ -11,11 +11,6 @@ jest.mock("../api/RealtimeAPIClient");
 
 describe("Orchestrator", () => {
   const defaultConfig = {
-    audio: {
-      channels: 1,
-      bitDepth: 16,
-      sampleRate: 24000,
-    },
     recording: {
       sampleRate: 24000,
       channels: 1,
@@ -42,20 +37,7 @@ describe("Orchestrator", () => {
     mockOnError = jest.fn();
     mockFunctionHandler = jest.fn();
 
-    orchestrator = new Orchestrator(
-      defaultConfig,
-      {
-        onStateChange: mockOnStateChange,
-        onError: mockOnError,
-      },
-      [
-        {
-          name: "test_function",
-          handler: mockFunctionHandler,
-        },
-      ],
-      () => {}
-    );
+    orchestrator = new Orchestrator(defaultConfig, [], mockOnStateChange);
   });
 
   describe("initialization", () => {

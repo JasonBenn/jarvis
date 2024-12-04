@@ -3,7 +3,6 @@ import { RecordingManager } from "../recording/RecordingManager";
 import { RealtimeAPIClient } from "../api/RealtimeAPIClient";
 import {
   OrchestratorConfig,
-  OrchestratorEvents,
   OrchestratorState,
   IOrchestratorCommands,
   FunctionCallHandler,
@@ -14,18 +13,15 @@ export class Orchestrator implements IOrchestratorCommands {
   private recordingManager: RecordingManager;
   private apiClient: RealtimeAPIClient;
   private state: OrchestratorState = OrchestratorState.INITIALIZING;
-  private events: OrchestratorEvents;
   private functionHandlers: Map<string, FunctionCallHandler["handler"]>;
   private currentFunctionCallId: string | null = null;
   private onStateChange: (state: OrchestratorState) => void;
 
   constructor(
     config: OrchestratorConfig,
-    events: OrchestratorEvents = {},
     functionHandlers: FunctionCallHandler[] = [],
     onStateChange: (state: OrchestratorState) => void
   ) {
-    this.events = events;
     this.functionHandlers = new Map(
       functionHandlers.map((h) => [h.name, h.handler])
     );
@@ -34,9 +30,7 @@ export class Orchestrator implements IOrchestratorCommands {
     this.setState(OrchestratorState.READY);
 
     // Initialize all managers with their respective configs
-    this.audioManager = new AudioManager(config.audio, {
-      onError: this.handleError.bind(this),
-    });
+    this.audioManager = new AudioManager();
 
     this.recordingManager = new RecordingManager(config.recording, {
       onData: this.handleRecordingData.bind(this),
@@ -97,7 +91,7 @@ export class Orchestrator implements IOrchestratorCommands {
     if (this.state !== OrchestratorState.AI_SPEAKING) {
       this.setState(OrchestratorState.AI_SPEAKING);
     }
-    this.audioManager.play(audioData);
+    this.audioManager.playVoice(audioData);
   }
 
   private async handleFunctionCall(
@@ -130,6 +124,5 @@ export class Orchestrator implements IOrchestratorCommands {
 
   private handleError(error: Error): void {
     this.setState(OrchestratorState.ERROR);
-    this.events.onError?.(error);
   }
 }

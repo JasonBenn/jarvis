@@ -1,13 +1,15 @@
 import dotenv from "dotenv";
-import { RealtimeAPIClient } from "./modules/api/RealtimeAPIClient";
+import { Orchestrator } from "./modules/orchestrator/Orchestrator";
+
 dotenv.config();
 
-const client = new RealtimeAPIClient();
-client.connect();
+const orchestrator = new Orchestrator();
+orchestrator.start();
+console.log("🔊 Orchestrator started");
 
 function gracefulShutdown() {
   console.log("🔊 Graceful shutdown");
-  client.disconnect();
+  orchestrator.stop();
   process.exit(0);
 }
 
