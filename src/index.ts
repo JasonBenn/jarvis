@@ -1,16 +1,14 @@
 import dotenv from "dotenv";
-import { Orchestrator } from "./modules/orchestrator/Orchestrator";
+import { RealtimeClient } from "./modules/realtime/RealtimeClient";
 
 dotenv.config();
 
-const orchestrator = new Orchestrator();
-orchestrator.start();
-console.log("🔊 Orchestrator started");
+const client = new RealtimeClient();
 
-function gracefulShutdown() {
+client.connect();
+
+process.on("SIGINT", () => {
   console.log("🔊 Graceful shutdown");
-  orchestrator.stop();
+  client.disconnect();
   process.exit(0);
-}
-
-process.on("SIGINT", gracefulShutdown);
+});
