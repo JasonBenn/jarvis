@@ -1,8 +1,8 @@
-declare module 'node-record-lpcm16' {
+declare module "node-record-lpcm16" {
   interface RecordOptions {
     sampleRate?: number;
     channels?: number;
-    audioType?: 'raw' | 'wav';
+    audioType?: "raw" | "wav";
   }
 
   interface Recorder {
@@ -11,6 +11,6 @@ declare module 'node-record-lpcm16' {
   }
 
   function record(options?: RecordOptions): Recorder;
-  
+
   export default { record };
-} 
+}

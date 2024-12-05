@@ -2,6 +2,7 @@ import wav from "wav";
 import Speaker from "speaker";
 import { createReadStream } from "fs";
 import { Readable } from "stream";
+
 export interface IAudioManager {
   playVoice(audioData: Buffer): void;
   stopVoice(): void;
@@ -16,22 +17,18 @@ export class AudioManager implements IAudioManager {
   private typingSoundStream: Readable | null = null;
 
   playVoice(audioData: Buffer) {
-    if (this.speaker) {
-      this.stopVoice();
-    }
+    this.speaker = new Speaker({
+      channels: 1,
+      bitDepth: 16,
+      sampleRate: 24000,
+    });
 
-    if (!this.speaker) {
-      this.speaker = new Speaker({
-        channels: 1,
-        bitDepth: 16,
-        sampleRate: 24000,
-      });
-    }
-
-    this.speaker.write(audioData);
+    this.speaker.write(Buffer.from(audioData), () => {
+      console.info("Speaker data written");
+    });
 
     this.speaker.on("close", () => {
-      console.log("🔊 Audio buffer drained");
+      this.stopVoice();
     });
   }
 
@@ -54,23 +51,14 @@ export class AudioManager implements IAudioManager {
       sampleRate: 44100,
     });
 
-    const reader = new wav.Reader();
-    createReadStream("data/typing.wav")
-      .pipe(reader)
-      .on("format", () => {
-        reader.pipe(this.typingSpeaker!);
-      });
-
-    reader.on("close", () => {
-      this.playTypingSound();
+    this.typingSoundStream = createReadStream("data/typing.wav");
+    this.typingSoundStream.pipe(this.typingSpeaker);
+    this.typingSoundStream.on("end", () => {
+      this.stopTypingSound();
     });
   }
 
   stopTypingSound() {
-    if (this.typingSoundStream) {
-      this.typingSoundStream.removeAllListeners();
-      this.typingSoundStream = null;
-    }
     if (this.typingSpeaker) {
       this.typingSpeaker.removeAllListeners();
       this.typingSpeaker.end();

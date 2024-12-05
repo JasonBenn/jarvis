@@ -12,13 +12,14 @@
     "test:coverage": "jest --coverage",
     "lint": "eslint src/**/*.ts",
     "format": "prettier --write \"src/**/*.ts\"",
-    "script:audio": "ts-node src/modules/audio/script.ts"
+    "script:audio": "ts-node src/modules/audio/playSounds.ts",
+    "script:record": "ts-node src/modules/recording/record.ts"
   },
   "dependencies": {
     "dotenv": "^16.3.1",
     "node-record-lpcm16": "^1.0.1",
     "node-vad": "^1.1.4",
-    "speaker": "^0.5.4",
+    "speaker": "github:JasonBenn/node-speaker",
     "wav": "^1.0.2",
     "ws": "^8.14.2"
   },

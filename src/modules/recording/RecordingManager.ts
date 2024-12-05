@@ -1,6 +1,11 @@
-import recorder from 'node-record-lpcm16';
-import { RecordingConfig, RecordingEvents, IRecordingManager, RecordInstance } from './types';
-import { Readable } from 'stream';
+import recorder from "node-record-lpcm16";
+import {
+  RecordingConfig,
+  RecordingEvents,
+  IRecordingManager,
+  RecordInstance,
+} from "./types";
+import { Readable } from "stream";
 
 export class RecordingManager implements IRecordingManager {
   private config: RecordingConfig;
@@ -9,8 +14,13 @@ export class RecordingManager implements IRecordingManager {
   private stream: Readable | null = null;
   private _isRecording: boolean = false;
 
-  constructor(config: RecordingConfig, events: RecordingEvents = {}) {
-    this.config = config;
+  constructor(config: RecordingConfig = {}, events: RecordingEvents = {}) {
+    this.config = {
+      sampleRate: 16000,
+      channels: 1,
+      audioType: "raw",
+      ...config,
+    };
     this.events = events;
   }
 
@@ -27,23 +37,25 @@ export class RecordingManager implements IRecordingManager {
       this.recording = recorder.record({
         sampleRate: this.config.sampleRate,
         channels: this.config.channels,
-        audioType: this.config.audioType
+        audioType: this.config.audioType,
       });
 
       this.stream = this.recording.stream() as Readable;
-      
-      this.stream.on('data', (chunk: Buffer) => {
+
+      this.stream.on("data", (chunk: Buffer) => {
         this.events.onData?.(chunk);
       });
 
-      this.stream.on('error', (error: Error) => {
+      this.stream.on("error", (error: Error) => {
         this.handleError(error);
       });
 
       this._isRecording = true;
       this.events.onStart?.();
     } catch (error) {
-      this.handleError(error instanceof Error ? error : new Error(String(error)));
+      this.handleError(
+        error instanceof Error ? error : new Error(String(error))
+      );
     }
   }
 
@@ -60,7 +72,9 @@ export class RecordingManager implements IRecordingManager {
       this._isRecording = false;
       this.events.onStop?.();
     } catch (error) {
-      this.handleError(error instanceof Error ? error : new Error(String(error)));
+      this.handleError(
+        error instanceof Error ? error : new Error(String(error))
+      );
     }
   }
 

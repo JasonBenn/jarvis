@@ -2,7 +2,6 @@ import { RecordingConfig } from "../recording/types";
 import { APIConfig } from "../api/types";
 
 export interface OrchestratorConfig {
-  recording: RecordingConfig;
   api: APIConfig;
 }
 

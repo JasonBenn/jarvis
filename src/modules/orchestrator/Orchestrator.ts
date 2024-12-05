@@ -32,10 +32,13 @@ export class Orchestrator implements IOrchestratorCommands {
     // Initialize all managers with their respective configs
     this.audioManager = new AudioManager();
 
-    this.recordingManager = new RecordingManager(config.recording, {
-      onData: this.handleRecordingData.bind(this),
-      onError: this.handleError.bind(this),
-    });
+    this.recordingManager = new RecordingManager(
+      {},
+      {
+        onData: this.handleRecordingData.bind(this),
+        onError: this.handleError.bind(this),
+      }
+    );
 
     this.apiClient = new RealtimeAPIClient(config.api, {
       onAudioData: this.handleAIAudio.bind(this),
