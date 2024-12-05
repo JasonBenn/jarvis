@@ -17,6 +17,8 @@ export class AudioManager implements IAudioManager {
   private typingSoundStream: Readable | null = null;
   private isPlayingAudio: boolean = false;
 
+  private readonly SPEAKER_BITRATE = 24000;
+
   initializeSpeaker() {
     if (this.speaker) {
       this.stopVoice();
@@ -25,7 +27,7 @@ export class AudioManager implements IAudioManager {
     this.speaker = new Speaker({
       channels: 1,
       bitDepth: 16,
-      sampleRate: 24000,
+      sampleRate: this.SPEAKER_BITRATE,
     });
   }
 
@@ -47,13 +49,46 @@ export class AudioManager implements IAudioManager {
     return new Promise<void>((resolve, reject) => {
       if (!this.speaker) return resolve();
 
-      this.speaker.once("error", reject);
-      this.speaker.once("close", () => {
-        this.stopVoice();
-        resolve();
+      const bufferStream = new Readable({
+        read() {},
       });
 
-      this.speaker.write(audioData);
+      const CHUNK_SIZE = this.SPEAKER_BITRATE * 0.25; // 0.25 seconds
+
+      let offset = 0;
+      const sendNextChunk = () => {
+        if (offset >= audioData.length) {
+          bufferStream.push(null);
+          return;
+        }
+
+        const chunk = audioData.slice(offset, offset + CHUNK_SIZE);
+        bufferStream.push(chunk);
+        offset += CHUNK_SIZE;
+
+        setTimeout(sendNextChunk, 10);
+      };
+
+      const errorHandler = (error: Error) => {
+        bufferStream.removeListener("end", endHandler);
+        this.speaker?.removeListener("error", errorHandler);
+        reject(error);
+      };
+
+      const endHandler = () => {
+        bufferStream.removeListener("error", errorHandler);
+        this.speaker?.removeListener("error", errorHandler);
+        this.stopVoice();
+        resolve();
+      };
+
+      bufferStream.once("error", errorHandler);
+      this.speaker.once("error", errorHandler);
+      bufferStream.once("end", endHandler);
+
+      bufferStream.pipe(this.speaker);
+
+      sendNextChunk();
     });
   }
 
