@@ -1,51 +1,52 @@
-import { AudioManager } from "../../../src/modules/audio/AudioManager";
-
-jest.mock("speaker");
+import * as fs from "fs";
+import { AudioManager } from "./AudioManager";
+import path from "path";
 
 describe("AudioManager", () => {
   let audioManager: AudioManager;
+  let timeoutId: NodeJS.Timeout;
 
   beforeEach(() => {
     audioManager = new AudioManager();
+    jest.clearAllMocks();
   });
 
   afterEach(() => {
-    audioManager.cleanup();
+    // Clean up timeout if it exists
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+    // Ensure cleanup after each test
+    audioManager.stopVoice();
   });
 
-  describe("initialization", () => {
-    it("should create an instance with default config", () => {
-      expect(audioManager).toBeDefined();
-    });
-  });
+  describe("voice playback", () => {
+    it("should correctly play voice data", () => {
+      return new Promise<void>((done) => {
+        const testAudioPath = path.join(process.cwd(), "data/michael.raw");
+        const audioData = fs.readFileSync(testAudioPath);
+        audioManager.initializeSpeaker();
 
-  describe("playback", () => {
-    it("should handle empty buffer gracefully", () => {
-      audioManager.playVoice(Buffer.from([]));
-      // TODO: Add assertions
-    });
+        const speakerWriteSpy = jest.spyOn(audioManager["speaker"]!, "write");
 
-    it("should clean up resources on stop", () => {
-      audioManager.playVoice(Buffer.from([]));
-      audioManager.stopVoice();
+        // playVoice for 0.1 seconds
+        audioManager.playVoice(audioData);
 
-      // TODO: Add assertions
-    });
-  });
-
-  describe("cleanup", () => {
-    it("should clean up all resources", () => {
-      audioManager.playVoice(Buffer.from([]));
-      audioManager.cleanup();
-
-      // TODO: Add assertions
+        timeoutId = setTimeout(() => {
+          try {
+            expect(speakerWriteSpy).toHaveBeenCalledWith(expect.any(Buffer));
+            done();
+          } finally {
+            audioManager.stopVoice();
+          }
+        }, 100); // Reduced timeout to 100ms for faster tests
+      });
     });
 
-    it("should handle multiple cleanup calls safely", () => {
-      audioManager.cleanup();
-      audioManager.cleanup();
-
-      // TODO: Add assertions
+    it("should handle empty or invalid audio data", () => {
+      expect(() => {
+        audioManager.playVoice(Buffer.from([]));
+      }).not.toThrow();
     });
   });
 });

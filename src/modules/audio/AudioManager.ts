@@ -4,9 +4,9 @@ import { createReadStream } from "fs";
 import { Readable } from "stream";
 
 export interface IAudioManager {
-  playVoice(audioData: Buffer): void;
+  playVoice(audioData: Buffer): Promise<void>;
   stopVoice(): void;
-  playTypingSound(): void;
+  playTypingSound(): Promise<void>;
   stopTypingSound(): void;
   cleanup(): void;
 }
@@ -16,19 +16,36 @@ export class AudioManager implements IAudioManager {
   private typingSpeaker: Speaker | null = null;
   private typingSoundStream: Readable | null = null;
 
-  playVoice(audioData: Buffer) {
+  initializeSpeaker() {
     this.speaker = new Speaker({
       channels: 1,
       bitDepth: 16,
       sampleRate: 24000,
     });
+  }
 
-    this.speaker.write(Buffer.from(audioData), () => {
-      console.info("Speaker data written");
-    });
+  async playVoice(audioData: Buffer): Promise<void> {
+    if (!this.speaker) {
+      this.initializeSpeaker();
+    }
 
-    this.speaker.on("close", () => {
+    try {
+      await this.writeToSpeaker(audioData);
+    } catch (error) {
       this.stopVoice();
+      throw error;
+    }
+  }
+
+  private writeToSpeaker(audioData: Buffer): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      this.speaker!.once("error", reject);
+      this.speaker!.once("close", () => {
+        this.stopVoice();
+        resolve();
+      });
+
+      this.speaker!.write(Buffer.from(audioData));
     });
   }
 
@@ -40,25 +57,40 @@ export class AudioManager implements IAudioManager {
     }
   }
 
-  playTypingSound() {
+  async playTypingSound(): Promise<void> {
     if (this.typingSpeaker) {
       this.stopTypingSound();
     }
 
-    this.typingSpeaker = new Speaker({
-      channels: 2,
-      bitDepth: 16,
-      sampleRate: 44100,
-    });
-
-    this.typingSoundStream = createReadStream("data/typing.wav");
-    this.typingSoundStream.pipe(this.typingSpeaker);
-    this.typingSoundStream.on("end", () => {
+    try {
+      await this.playTypingSoundFile();
+    } catch (error) {
       this.stopTypingSound();
+      throw error;
+    }
+  }
+
+  private playTypingSoundFile(): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      this.typingSpeaker = new Speaker({
+        channels: 2,
+        bitDepth: 16,
+        sampleRate: 44100,
+      });
+
+      this.typingSoundStream = createReadStream("data/typing.wav");
+
+      this.typingSoundStream.once("error", reject);
+      this.typingSoundStream.once("end", () => {
+        this.stopTypingSound();
+        resolve();
+      });
+
+      this.typingSoundStream.pipe(this.typingSpeaker);
     });
   }
 
-  stopTypingSound() {
+  stopTypingSound(): void {
     if (this.typingSpeaker) {
       this.typingSpeaker.removeAllListeners();
       this.typingSpeaker.end();
