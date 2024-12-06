@@ -48,7 +48,7 @@ class RealtimeClient {
         
         // Stop current audio playback
         if (this.speaker) {
-            this.speaker.end();
+            this.speaker.close(true);
             this.speaker = null;
         }
         
@@ -142,7 +142,7 @@ class RealtimeClient {
             this.typingSoundStream = null;
         }
         if (this.typingSpeaker) {
-            this.typingSpeaker.end();
+            this.typingSpeaker.close(true);
             this.typingSpeaker = null;
         }
     }

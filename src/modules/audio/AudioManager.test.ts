@@ -30,7 +30,7 @@ describe("AudioManager", () => {
         const speakerWriteSpy = jest.spyOn(audioManager["speaker"]!, "write");
 
         // playVoice for 0.1 seconds
-        audioManager.playVoice(audioData);
+        audioManager.playVoice(audioData.toString("base64"));
 
         timeoutId = setTimeout(() => {
           try {
@@ -45,7 +45,7 @@ describe("AudioManager", () => {
 
     it("should handle empty or invalid audio data", () => {
       expect(() => {
-        audioManager.playVoice(Buffer.from([]));
+        audioManager.playVoice("");
       }).not.toThrow();
     });
   });
