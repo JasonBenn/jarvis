@@ -24,14 +24,11 @@ export class RealtimeClient implements IRealtimeClient {
   }
 
   private setupKeyboardControls(): void {
-    const rl = createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    });
-
     process.stdin.setRawMode(true);
-    process.stdin.on("keypress", (str, key) => {
-      if (key.name === "space") {
+    process.stdin.resume();
+    process.stdin.setEncoding("utf8");
+    process.stdin.on("data", (key) => {
+      if (key.toString() === " ") {
         if (this.audioManager.isPlaying()) {
           this.handleInterruption();
         } else {
@@ -40,7 +37,7 @@ export class RealtimeClient implements IRealtimeClient {
           );
           this.stopRecordingAndRequestResponse();
         }
-      } else if (key.ctrl && key.name === "c") {
+      } else if (key.toString() === "\u0003") {
         this.disconnect();
         process.exit(0);
       }
@@ -173,8 +170,14 @@ export class RealtimeClient implements IRealtimeClient {
 
     switch (event.type) {
       case "response.audio.delta":
-        if (event.delta) {
-          this.audioManager.playVoice(Buffer.from(event.delta, "base64"));
+        try {
+          if (event.delta) {
+            await this.audioManager.playVoice(
+              Buffer.from(event.delta, "base64")
+            );
+          }
+        } catch (error) {
+          console.error("Error playing audio:", error);
         }
         break;
 

@@ -15,7 +15,9 @@ export class AudioManager implements IAudioManager {
   private speaker: Speaker | null = null;
   private typingSpeaker: Speaker | null = null;
   private typingSoundStream: Readable | null = null;
+  private audioBufferStream: Readable | null = null;
   private isPlayingAudio: boolean = false;
+  private pushChunkTimeoutId: NodeJS.Timeout | null = null;
 
   private readonly SPEAKER_BITRATE = 24000;
 
@@ -25,80 +27,105 @@ export class AudioManager implements IAudioManager {
     }
 
     this.speaker = new Speaker({
-      channels: 1,
+      channels: 2,
       bitDepth: 16,
       sampleRate: this.SPEAKER_BITRATE,
     });
+
+    this.audioBufferStream = new Readable({
+      read() {},
+    });
+
+    this.audioBufferStream.pipe(this.speaker);
   }
 
   async playVoice(audioData: Buffer): Promise<void> {
-    this.isPlayingAudio = true;
-    if (!this.speaker) {
-      this.initializeSpeaker();
-    }
-
     try {
-      await this.writeToSpeaker(audioData);
+      if (!this.speaker || !this.audioBufferStream) {
+        this.initializeSpeaker();
+      }
+
+      this.isPlayingAudio = true;
+
+      const stereoData = this.convertMonoToStereo(audioData);
+
+      const CHUNK_SIZE = this.SPEAKER_BITRATE * 0.25 * 4;
+
+      let offset = 0;
+
+      const pushChunk = () => {
+        if (!this.isPlayingAudio || !this.audioBufferStream) {
+          return;
+        }
+
+        if (offset >= stereoData.length) {
+          this.audioBufferStream.push(null);
+          return;
+        }
+
+        const chunk = stereoData.slice(offset, offset + CHUNK_SIZE);
+
+        const canPush = this.audioBufferStream.push(chunk);
+        offset += CHUNK_SIZE;
+
+        if (canPush) {
+          this.pushChunkTimeoutId = setTimeout(pushChunk, 10);
+        } else {
+          this.audioBufferStream.once("drain", () => {
+            this.pushChunkTimeoutId = setTimeout(pushChunk, 10);
+          });
+        }
+      };
+
+      pushChunk();
     } catch (error) {
+      console.error("Error in playVoice:", error);
       this.stopVoice();
       throw error;
     }
   }
 
-  private writeToSpeaker(audioData: Buffer): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      if (!this.speaker) return resolve();
+  private convertMonoToStereo(monoData: Buffer): Buffer {
+    const monoSamples = Buffer.from(monoData);
+    const stereoSamples = Buffer.alloc(monoSamples.length * 2);
 
-      const bufferStream = new Readable({
-        read() {},
-      });
+    for (let i = 0; i < monoSamples.length; i += 2) {
+      const sample = monoSamples.readInt16LE(i);
 
-      const CHUNK_SIZE = this.SPEAKER_BITRATE * 0.25; // 0.25 seconds
+      stereoSamples.writeInt16LE(sample, i * 2);
+      stereoSamples.writeInt16LE(sample, i * 2 + 2);
+    }
 
-      let offset = 0;
-      const sendNextChunk = () => {
-        if (offset >= audioData.length) {
-          bufferStream.push(null);
-          return;
-        }
-
-        const chunk = audioData.slice(offset, offset + CHUNK_SIZE);
-        bufferStream.push(chunk);
-        offset += CHUNK_SIZE;
-
-        setTimeout(sendNextChunk, 10);
-      };
-
-      const errorHandler = (error: Error) => {
-        bufferStream.removeListener("end", endHandler);
-        this.speaker?.removeListener("error", errorHandler);
-        reject(error);
-      };
-
-      const endHandler = () => {
-        bufferStream.removeListener("error", errorHandler);
-        this.speaker?.removeListener("error", errorHandler);
-        this.stopVoice();
-        resolve();
-      };
-
-      bufferStream.once("error", errorHandler);
-      this.speaker.once("error", errorHandler);
-      bufferStream.once("end", endHandler);
-
-      bufferStream.pipe(this.speaker);
-
-      sendNextChunk();
-    });
+    return stereoSamples;
   }
 
   stopVoice(): void {
     console.log("🔊 Stopping voice");
     this.isPlayingAudio = false;
+
+    if (this.pushChunkTimeoutId) {
+      clearTimeout(this.pushChunkTimeoutId);
+      this.pushChunkTimeoutId = null;
+    }
+
+    if (this.audioBufferStream) {
+      this.audioBufferStream.unpipe();
+      this.audioBufferStream.destroy();
+      this.audioBufferStream = null;
+    }
+
     if (this.speaker) {
       this.speaker.removeAllListeners();
-      this.speaker.end();
-      this.speaker.destroy();
+      try {
+        this.speaker.end();
+      } catch (e) {
+        console.error("Error ending speaker:", e);
+      }
+      try {
+        this.speaker.destroy();
+      } catch (e) {
+        console.error("Error destroying speaker:", e);
+      }
       this.speaker = null;
     }
   }
