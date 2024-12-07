@@ -70,7 +70,7 @@ export class RealtimeClient implements IRealtimeClient {
     if (this.ws?.readyState === WebSocket.OPEN) {
       console.log("🛑 Sending response.cancel");
       this.ws.send(JSON.stringify({ type: "response.cancel" }));
-      setTimeout(() => this.recordingManager.start(), 100);
+      this.recordingManager.start();
     }
   }
 
@@ -169,7 +169,13 @@ export class RealtimeClient implements IRealtimeClient {
 
     switch (event.type) {
       case "response.audio.delta":
-        await this.audioManager.playVoice(event.delta!);
+        try {
+          await this.audioManager.playVoice(event.delta!, () =>
+            this.recordingManager.start()
+          );
+        } catch (error) {
+          console.error("Error playing audio:", error);
+        }
         break;
 
       case "response.function_call_arguments.delta":
@@ -187,8 +193,6 @@ export class RealtimeClient implements IRealtimeClient {
 
       case "response.done":
         console.log("🔊 Response complete");
-        this.audioManager.stopVoice();
-        this.recordingManager.start();
         break;
 
       case "conversation.item.created":

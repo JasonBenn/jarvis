@@ -43,19 +43,17 @@ export class RecordingManager implements IRecordingManager {
       this.stream = this.recording.stream() as Readable;
 
       this.stream.on("data", (chunk: Buffer) => {
-        this.events.onData?.(chunk);
+        this.events?.onData?.(chunk);
       });
 
       this.stream.on("error", (error: Error) => {
-        this.handleError(error);
+        this.events?.onError?.(error);
       });
 
       this._isRecording = true;
-      this.events.onStart?.();
+      this.events?.onStart?.();
     } catch (error) {
-      this.handleError(
-        error instanceof Error ? error : new Error(String(error))
-      );
+      this.events?.onError?.(error as Error);
     }
   }
 
@@ -64,29 +62,15 @@ export class RecordingManager implements IRecordingManager {
       return;
     }
 
-    try {
-      this.recording?.stop();
-      this.stream?.removeAllListeners();
-      this.recording = null;
-      this.stream = null;
-      this._isRecording = false;
-      this.events.onStop?.();
-    } catch (error) {
-      this.handleError(
-        error instanceof Error ? error : new Error(String(error))
-      );
-    }
+    this.recording?.stop();
+    this.stream?.removeAllListeners();
+    this.recording = null;
+    this.stream = null;
+    this._isRecording = false;
+    this.events?.onStop?.();
   }
 
   public cleanup(): void {
     this.stop();
-  }
-
-  private handleError(error: Error): void {
-    this.events.onError?.(error);
-    // Always stop recording on error
-    if (this._isRecording) {
-      this.stop();
-    }
   }
 }

@@ -18,7 +18,7 @@
     "dotenv": "^16.3.1",
     "node-record-lpcm16": "^1.0.1",
     "node-vad": "^1.1.4",
-    "speaker": "github:JasonBenn/node-speaker",
+    "speaker": "github:JasonBenn/node-speaker#ab4f20a08751a260daf8ffdee9e64b24f57f90b1",
     "wav": "^1.0.2",
     "ws": "^8.14.2"
   },
