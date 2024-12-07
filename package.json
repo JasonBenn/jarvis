@@ -12,9 +12,11 @@
     "lint": "eslint src/**/*.ts",
     "format": "prettier --write \"src/**/*.ts\"",
     "script:audio": "ts-node src/modules/audio/playSounds.ts",
-    "script:record": "ts-node src/modules/recording/record.ts"
+    "script:record": "ts-node src/modules/recording/record.ts",
+    "script:write-note": "ts-node src/modules/realtime/writeNote.ts"
   },
   "dependencies": {
+    "axios": "^1.7.9",
     "dotenv": "^16.3.1",
     "node-record-lpcm16": "^1.0.1",
     "node-vad": "^1.1.4",

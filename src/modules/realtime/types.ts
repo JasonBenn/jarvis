@@ -119,9 +119,15 @@ export interface IRealtimeClient {
   connect(): void;
   disconnect(): void;
   handleInterruption(): void;
-  writeNote(
-    title: string,
-    content: string,
-    date?: string
-  ): Promise<{ success: boolean }>;
 }
+
+export type FunctionCallDone = {
+  type: "response.function_call_arguments.done";
+  event_id: string;
+  response_id: string;
+  item_id: string;
+  output_index: number;
+  call_id: string;
+  name: string;
+  arguments: string;
+};
