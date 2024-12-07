@@ -16,11 +16,13 @@
     "script:write-note": "ts-node src/modules/realtime/writeNote.ts"
   },
   "dependencies": {
+    "@types/spotify-web-api-node": "^5.0.11",
     "axios": "^1.7.9",
     "dotenv": "^16.3.1",
     "node-record-lpcm16": "^1.0.1",
     "node-vad": "^1.1.4",
-    "speaker": "github:JasonBenn/node-speaker#ab4f20a08751a260daf8ffdee9e64b24f57f90b1",
+    "speaker": "github:JasonBenn/node-speaker#6f528f0c4e36f1423213c42a7bad57d28b6dbdf9",
+    "spotify-web-api-node": "^5.0.2",
     "wav": "^1.0.2",
     "ws": "^8.14.2"
   },

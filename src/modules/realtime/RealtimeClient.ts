@@ -1,8 +1,9 @@
 import WebSocket from "ws";
+import fs from "fs";
 import { FunctionCallDone, IRealtimeClient, OpenAIServerEvent } from "./types";
 import { AudioManager } from "../audio/AudioManager";
 import { RecordingManager } from "../recording/RecordingManager";
-import { getTools, writeNote } from "../tools/Tools";
+import { callTool, getTools } from "../tools/Tools";
 
 export class RealtimeClient implements IRealtimeClient {
   private ws: WebSocket | null = null;
@@ -93,6 +94,10 @@ export class RealtimeClient implements IRealtimeClient {
     console.log("🌐 Connecting to OpenAI Realtime API");
 
     this.ws.onopen = () => {
+      const instructions = fs.readFileSync(
+        "./data/aspirational-self.txt",
+        "utf8"
+      );
       console.log("🌐 Connected to OpenAI Realtime API");
       this.ws?.send(
         JSON.stringify({
@@ -100,8 +105,7 @@ export class RealtimeClient implements IRealtimeClient {
           session: {
             modalities: ["text", "audio"],
             voice: "alloy",
-            instructions:
-              "You are a helpful assistant for a realtime audio chat. Speak quickly and concisely.",
+            instructions: instructions,
             input_audio_format: "pcm16",
             output_audio_format: "pcm16",
             turn_detection: null,
@@ -148,12 +152,14 @@ export class RealtimeClient implements IRealtimeClient {
         if (this.functionCallBuffers.size === 0) {
           console.log("⌨️ Starting typing sound...");
           this.audioManager.playTypingSound();
+          setTimeout(() => {
+            this.audioManager.stopTypingSound();
+          }, 4000);
         }
         this.handleFunctionCallDelta(event);
         break;
 
       case "response.function_call_arguments.done":
-        console.log("🔧 Function call done:", event.arguments);
         await this.handleFunctionCallDone(event as FunctionCallDone);
         break;
 
@@ -206,52 +212,36 @@ export class RealtimeClient implements IRealtimeClient {
   }
 
   async handleFunctionCallDone(event: FunctionCallDone) {
+    let outputEvent;
     try {
-      const args = JSON.parse(event.arguments || "");
-
-      if (event.name === "write_note") {
-        const result = await writeNote(
-          args.title,
-          args.content,
-          args.filename,
-          args.date
-        );
-
-        console.log("🔧 Function call response:", result);
-
-        // Send function output
-        const outputEvent = {
-          type: "conversation.item.create",
-          item: {
-            type: "function_call_output",
-            call_id: event.call_id,
-            output: JSON.stringify(result),
-          },
-        };
-        console.log("📤 Sending function output:", outputEvent);
-        this.ws?.send(JSON.stringify(outputEvent));
-
-        // Request next response
-        this.ws?.send(JSON.stringify({ type: "response.create" }));
-      }
+      const args = JSON.parse(event.arguments);
+      const result = await callTool(event.name, args);
+      outputEvent = {
+        type: "conversation.item.create",
+        item: {
+          type: "function_call_output",
+          call_id: event.call_id,
+          output: JSON.stringify(result),
+        },
+      };
+      console.log("📤 Sending function output:", outputEvent);
     } catch (error) {
       console.error("Error handling function call:", error);
-
-      this.ws?.send(
-        JSON.stringify({
-          type: "conversation.item.create",
-          item: {
-            type: "function_call_output",
-            call_id: event.call_id,
-            output: JSON.stringify({
-              success: false,
-              error: (error as Error).message || String(error),
-            }),
-          },
-        })
-      );
+      outputEvent = {
+        type: "conversation.item.create",
+        item: {
+          type: "function_call_output",
+          call_id: event.call_id,
+          output: JSON.stringify({
+            success: false,
+            error: (error as Error).message || String(error),
+          }),
+        },
+      };
     }
 
+    this.ws!.send(JSON.stringify(outputEvent));
+    this.ws!.send(JSON.stringify({ type: "response.create" }));
     this.functionCallBuffers.delete(event.call_id);
   }
   public disconnect(): void {
