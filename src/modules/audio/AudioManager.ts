@@ -89,14 +89,19 @@ export class AudioManager implements IAudioManager {
       this.finishTimeout = null;
     }
 
-    if (this.speaker) {
-      this.speaker.close(true);
-      this.speaker = null;
-    }
+    // Set isPlayingAudio to false first to prevent any new writes
+    this.isPlayingAudio = false;
+
+    // Add a small delay before closing the speaker to allow pending operations to complete
+    setTimeout(() => {
+      if (this.speaker) {
+        this.speaker.close(true);
+        this.speaker = null;
+      }
+    }, 100);
 
     this.remainingDuration = 0;
     this.lastCallback = undefined;
-    this.isPlayingAudio = false;
   }
 
   playTypingSound() {

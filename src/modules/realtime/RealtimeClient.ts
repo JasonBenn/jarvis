@@ -29,7 +29,10 @@ export class RealtimeClient implements IRealtimeClient {
     process.stdin.on("data", (key) => {
       if (key.toString() === " ") {
         if (this.audioManager.isPlaying()) {
-          this.handleInterruption();
+          console.log(
+            "Still playing audio - I would normally interrupt, but ignoring for now bc bugs"
+          );
+          //   this.handleInterruption();
         } else {
           console.log(
             "Space pressed - stopping recording and requesting response"
