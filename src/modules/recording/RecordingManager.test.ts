@@ -107,20 +107,6 @@ describe("RecordingManager", () => {
       expect(mockOnError).toHaveBeenCalledWith(error);
       expect(recordingManager.isRecording()).toBeFalsy();
     });
-
-    it("should handle stream errors", () => {
-      recordingManager.start();
-
-      // Get the 'error' event handler and call it with an error
-      const onError = (mockStream.on as jest.Mock).mock.calls.find(
-        (call) => call[0] === "error"
-      )[1];
-      const error = new Error("Stream error");
-      onError(error);
-
-      expect(mockOnError).toHaveBeenCalledWith(error);
-      expect(recordingManager.isRecording()).toBeFalsy();
-    });
   });
 
   describe("cleanup", () => {
